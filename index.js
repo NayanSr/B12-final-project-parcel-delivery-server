@@ -33,6 +33,28 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
+    const db= client.db('parcel_delivery_db');
+    const parcelCollection= db.collection('parcels');
+
+    // parcel api
+    app.get('/parcels', async(req,res)=>{
+      const query= {};
+      const {email}= req.query;
+      if(email){
+        query.senderEmail=email
+      }
+      const result= await parcelCollection.find(query).toArray();
+      res.send(result)
+
+    })
+
+    app.post('/parcels', async(req,res)=>{
+      const parcel= req.body;
+      const result= await parcelCollection.insertOne(parcel);
+      res.send(result)
+    })
+
+    
 
 
 
