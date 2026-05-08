@@ -16,13 +16,12 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const { ObjectId } = require("mongodb");
 
 const port = process.env.PORT || 3000;
-const crypto= require("crypto");
-function generateTrackingId(){
-  const prefix= "PRCL";
-  const date= new Date().toISOString().slice(0,10).replace(/-/g, ""); // YYYYMMDD
-  const random= crypto.randomBytes(3).toString("hex").toUpperCase(); // 6-char random hex
-  return `${prefix}-${date}-${random}`
-
+const crypto = require("crypto");
+function generateTrackingId() {
+  const prefix = "PRCL";
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase(); // 6-char random hex
+  return `${prefix}-${date}-${random}`;
 }
 
 // middleware
@@ -148,8 +147,16 @@ async function run() {
     app.patch("/payment-success", async (req, res) => {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      const trackingId= generateTrackingId();
-      
+      // Preventing multiple post in payment entry in db
+      const transactionId = session.payment_intent;
+      const query = { transactionId: transactionId };
+      const paymentExist = await paymentCollection.findOne(query);
+      if (paymentExist) {
+        return res.send({ message: "Already exists", transactionId, trackingId:paymentExist.trackingId });
+      }
+
+      const trackingId = generateTrackingId();
+
       // console.log("session retrive :", session);
       if (session.payment_status === "paid") {
         const id = session.metadata.parcelId;
@@ -158,7 +165,7 @@ async function run() {
         const update = {
           $set: {
             paymentStatus: "paid",
-            trackingId: trackingId
+            trackingId: trackingId,
           },
         };
         const result = await parcelCollection.updateOne(query, update);
@@ -171,14 +178,14 @@ async function run() {
           transactionId: session.payment_intent,
           paymentStatus: session.payment_status,
           paidAt: new Date(),
-          
+          trackingId: trackingId,
         };
         if (session.payment_status === "paid") {
           const resultPayment = await paymentCollection.insertOne(payment);
           return res.send({
             success: true,
             modifyParcel: result,
-            trackingId:trackingId,
+            trackingId: trackingId,
             paymentInfo: resultPayment,
             transactionId: session.payment_intent,
           });
