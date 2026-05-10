@@ -17,6 +17,14 @@ const { ObjectId } = require("mongodb");
 
 const port = process.env.PORT || 3000;
 const crypto = require("crypto");
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./parcel-deliverye-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 function generateTrackingId() {
   const prefix = "PRCL";
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
@@ -27,6 +35,27 @@ function generateTrackingId() {
 // middleware
 app.use(express.json());
 app.use(cors());
+
+//* Custom Middleware
+const verifyFBToken=async(req,res,next)=>{
+  // console.log('headers in the middleware', req.headers.authorization);
+  const token=req.headers.authorization;
+  if(!token){
+    return res.status(401).send({message:'unathorized access'})
+  }
+
+  try{
+    const idToken= token.split(' ')[1];
+    const decoded= await admin.auth().verifyIdToken(idToken);
+    console.log('decoded in the token', decoded);
+    req.decoded_email= decoded.email;
+    next();
+  }
+  catch(err){
+return res.status(401).send({message:'Unauthorized access'})
+  }
+
+}
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.yo4en.mongodb.net/?appName=Cluster0`;
 // console.log('URL:',uri)
@@ -45,6 +74,8 @@ async function run() {
     const db = client.db("parcel_delivery_db");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+
+  
 
     // parcel api
     app.get("/parcels", async (req, res) => {
@@ -195,13 +226,21 @@ async function run() {
     });
 
     // Payment related
-    app.get('/payments', async(req,res)=>{
+    app.get('/payments', verifyFBToken, async(req,res)=>{
       const email= req.query.email;
       const query={};
+
+
+
       if(email){
         query.customerEmail=email;
+
+        // Check email address
+        if(email!==req.decoded_email){
+          return res.status(403).send({message:'forbidden access'})
+        }
       }
-      const cursor=  paymentCollection.find(query);
+      const cursor=  paymentCollection.find(query).sort({paidAt:-1});
       const result= await cursor.toArray();
       res.send(result)
     })
