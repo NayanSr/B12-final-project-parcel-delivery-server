@@ -284,6 +284,88 @@ async function run() {
       res.send(result);
     });
 
+   app.patch('/riders/:identification', async(req,res)=>{
+    const id= req.params.identification;
+    const status= req.body.status;
+    const query= {_id: new ObjectId(id)};
+    const updatedDoc={
+      $set:{status:status}
+    };
+    const result= await riderCollection.updateOne(query,updatedDoc);
+    // if(status === 'approved'){        PH
+    if(result.modifiedCount > 0 && status === 'approved'){   //My Change
+      const email= req.body.email;
+      const userQuery= {email};
+      const updateUser= {
+        $set:{role:'rider'}
+      }
+      const userResult= await userCollection.updateOne(userQuery,updateUser)
+    }
+    
+    res.send(result)
+   })
+
+   //! AI Version
+   /* 
+   app.patch('/riders/:identification', async (req, res) => {
+
+  try {
+    const id = req.params.identification;
+    const status = req.body.status;
+    const query = { _id: new ObjectId(id) };
+
+    const updatedDoc = {
+      $set: { status: status }
+    };
+
+    const result = await riderCollection.updateOne(query, updatedDoc);
+
+    // First ensure rider update success
+    if (result.modifiedCount > 0 && status === 'approved') {
+
+      const rider = await riderCollection.findOne(query);
+
+      const userQuery = { email: rider.email };
+
+      const updateUser = {
+        $set: { role: 'rider' }
+      };
+
+      await userCollection.updateOne(userQuery, updateUser);
+    }
+
+    res.send(result);
+
+  } catch (error) {
+
+    res.status(500).send({
+      message: 'Something went wrong',
+      error: error.message
+    });
+
+  }
+
+});
+   */
+
+
+
+
+ /* app.patch('/riders/:id', async(req,res)=>{
+      const id= req.params.id;
+      const status= req.body.status;
+      const query= {_id: new ObjectId(id)};
+      const updatedDoc={
+        $set:{
+          status:status
+        }
+      }
+      const result= await riderCollection.updateOne(query,updatedDoc);
+      res.send(result);
+    }) */
+
+
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
