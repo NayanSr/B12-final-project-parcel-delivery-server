@@ -22,7 +22,7 @@ const admin = require("firebase-admin");
 const serviceAccount = require("./parcel-deliverye-adminsdk.json");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 
 function generateTrackingId() {
@@ -37,25 +37,23 @@ app.use(express.json());
 app.use(cors());
 
 //* Custom Middleware
-const verifyFBToken=async(req,res,next)=>{
+const verifyFBToken = async (req, res, next) => {
   // console.log('headers in the middleware', req.headers.authorization);
-  const token=req.headers.authorization;
-  if(!token){
-    return res.status(401).send({message:'unathorized access'})
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "unathorized access" });
   }
 
-  try{
-    const idToken= token.split(' ')[1];
-    const decoded= await admin.auth().verifyIdToken(idToken);
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
     // console.log('decoded in the token', decoded);
-    req.decoded_email= decoded.email;
+    req.decoded_email = decoded.email;
     next();
+  } catch (err) {
+    return res.status(401).send({ message: "Unauthorized access" });
   }
-  catch(err){
-return res.status(401).send({message:'Unauthorized access'})
-  }
-
-}
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.yo4en.mongodb.net/?appName=Cluster0`;
 // console.log('URL:',uri)
@@ -73,27 +71,28 @@ async function run() {
 
     const db = client.db("parcel_delivery_db");
     const userCollection = db.collection("users");
+    const riderCollection = db.collection("riders");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
 
     // Users related API
-    app.post("/users", async(req,res)=>{
-      const user= req.body;
-      user.role= 'user';
-      user.createdAt= new Date();
-      const email= user.email;
-      const isExist= await userCollection.findOne({email});
-      if(isExist){
-        return res.send({message:'User already exist'})
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      user.role = "user";
+      user.createdAt = new Date();
+      const email = user.email;
+      const isExist = await userCollection.findOne({ email });
+      if (isExist) {
+        return res.send({ message: "User already exist" });
       }
-      const result= await userCollection.insertOne(user)
-      res.send(result)
-    });
-    app.get('/users', async(req, res)=>{
-      const cursor= userCollection.find();
-      const result= await cursor.toArray();
+      const result = await userCollection.insertOne(user);
       res.send(result);
-    })
+    });
+    app.get("/users", async (req, res) => {
+      const cursor = userCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
 
     // parcel api
     app.get("/parcels", async (req, res) => {
@@ -201,7 +200,11 @@ async function run() {
       const query = { transactionId: transactionId };
       const paymentExist = await paymentCollection.findOne(query);
       if (paymentExist) {
-        return res.send({ message: "Already exists", transactionId, trackingId:paymentExist.trackingId });
+        return res.send({
+          message: "Already exists",
+          transactionId,
+          trackingId: paymentExist.trackingId,
+        });
       }
 
       const trackingId = generateTrackingId();
@@ -244,24 +247,42 @@ async function run() {
     });
 
     // Payment related
-    app.get('/payments', verifyFBToken, async(req,res)=>{
-      const email= req.query.email;
-      const query={};
+    app.get("/payments", verifyFBToken, async (req, res) => {
+      const email = req.query.email;
+      const query = {};
 
-
-
-      if(email){
-        query.customerEmail=email;
+      if (email) {
+        query.customerEmail = email;
 
         // Check email address
-        if(email!==req.decoded_email){
-          return res.status(403).send({message:'forbidden access'})
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "forbidden access" });
         }
       }
-      const cursor=  paymentCollection.find(query).sort({paidAt:-1});
-      const result= await cursor.toArray();
-      res.send(result)
-    })
+      const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    //* riders api
+
+    app.get("/riders", async (req, res) => {
+      const query = {};
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+      const cursor = riderCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.post("/riders", async (req, res) => {
+      const rider = req.body;
+      rider.status = "pending";
+      rider.createdAt = new Date();
+      const result = await riderCollection.insertOne(rider);
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
