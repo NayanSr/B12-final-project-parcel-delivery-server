@@ -47,7 +47,7 @@ const verifyFBToken=async(req,res,next)=>{
   try{
     const idToken= token.split(' ')[1];
     const decoded= await admin.auth().verifyIdToken(idToken);
-    console.log('decoded in the token', decoded);
+    // console.log('decoded in the token', decoded);
     req.decoded_email= decoded.email;
     next();
   }
@@ -72,10 +72,28 @@ async function run() {
     await client.connect();
 
     const db = client.db("parcel_delivery_db");
+    const userCollection = db.collection("users");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
 
-  
+    // Users related API
+    app.post("/users", async(req,res)=>{
+      const user= req.body;
+      user.role= 'user';
+      user.createdAt= new Date();
+      const email= user.email;
+      const isExist= await userCollection.findOne({email});
+      if(isExist){
+        return res.send({message:'User already exist'})
+      }
+      const result= await userCollection.insertOne(user)
+      res.send(result)
+    });
+    app.get('/users', async(req, res)=>{
+      const cursor= userCollection.find();
+      const result= await cursor.toArray();
+      res.send(result);
+    })
 
     // parcel api
     app.get("/parcels", async (req, res) => {
