@@ -154,9 +154,12 @@ next();
     // parcel api
     app.get("/parcels", async (req, res) => {
       const query = {};
-      const { email } = req.query;
+      const { email, deliveryStatus } = req.query;
       if (email) {
         query.senderEmail = email;
+      }
+      if(deliveryStatus){
+        query.deliveryStatus= deliveryStatus
       }
       const options = { sort: { createdAt: -1 } };
       const cursor = parcelCollection.find(query, options);
@@ -178,6 +181,41 @@ next();
       const result = await parcelCollection.insertOne(parcel);
       res.send(result);
     });
+
+    app.patch('/parcels/:id', async(req,res)=>{
+      const id= req.params.id;
+      const query= {_id: new ObjectId(id)};
+      const {riderId, riderEmail,riderName, parcelId}=req.body;
+
+      const updatedDoc={
+        $set:{
+          deliveryStatus: "rider_assgined",
+          riderId:riderId,
+          riderName:riderName,
+          riderEmail: riderEmail
+        }
+      }
+
+      const result= await parcelCollection.updateOne(query,updatedDoc);
+
+      //Update rider info
+      const riderQuery= {_id: new ObjectId(riderId)};
+      const riderUpdareDoc= {
+        $set:{
+          workStatus:'engaged'
+        }
+      }
+      const riderResult= await riderCollection.updateOne(riderQuery, riderUpdareDoc);
+      res.send(riderResult)
+    })
+
+    /* 
+     riderId: rider._id,
+      riderEmail:rider.email,
+      riderName: rider.name,
+      parcelId: selectedParcel._id
+    */
+
 
     app.delete("/parcels/:id", async (req, res) => {
       const id = req.params.id;
@@ -274,6 +312,7 @@ next();
         const update = {
           $set: {
             paymentStatus: "paid",
+            deliveryStatus:"pending-pickup",
             trackingId: trackingId,
           },
         };
@@ -324,14 +363,25 @@ next();
     //* riders api
 
     app.get("/riders", async (req, res) => {
+      const {status, district, workStatus}= req.query;
       const query = {};
-      if (req.query.status) {
-        query.status = req.query.status;
+      // console.log(req.query)
+      if (status) {
+        query.status = status;
+      }
+      if(district){
+        query.district=district
+      }
+      if(workStatus){
+        query.workStatus= workStatus
       }
       const cursor = riderCollection.find(query);
       const result = await cursor.toArray();
+      // console.log("All riders", result, "QUERY", query)
       res.send(result);
     });
+
+
 
     app.post("/riders", async (req, res) => {
       const rider = req.body;
@@ -346,8 +396,9 @@ next();
     const status= req.body.status;
     const query= {_id: new ObjectId(id)};
     const updatedDoc={
-      $set:{status:status}
+      $set:{status:status, workStatus:'available'}
     };
+
     const result= await riderCollection.updateOne(query,updatedDoc);
     // if(status === 'approved'){        PH
     if(result.modifiedCount > 0 && status === 'approved'){   //My Change
