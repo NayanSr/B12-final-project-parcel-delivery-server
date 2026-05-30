@@ -167,6 +167,27 @@ next();
 
       res.send(result);
     });
+    
+
+    app.get("/parcels/riders", async(req,res)=>{
+      const {riderEmail, deliveryStatus}= req.query;
+      const query= {};
+      if(riderEmail){
+          query.riderEmail= riderEmail
+      }
+      if(deliveryStatus){
+        // query.deliveryStatus={$in:['rider_assgined','rider_arriving']}
+        query.deliveryStatus={$nin:['parcel_delivered']}
+       
+      }
+
+      // console.log('Query', query)
+      
+      
+      const cursor= await parcelCollection.find(query);
+      const result= await cursor.toArray();
+      res.send(result)
+    })
 
     app.get("/parcels/:id", async (req, res) => {
       const id = req.params.id;
@@ -189,7 +210,7 @@ next();
 
       const updatedDoc={
         $set:{
-          deliveryStatus: "rider_assgined",
+          deliveryStatus: "rider_assigned",
           riderId:riderId,
           riderName:riderName,
           riderEmail: riderEmail
@@ -209,12 +230,18 @@ next();
       res.send(riderResult)
     })
 
-    /* 
-     riderId: rider._id,
-      riderEmail:rider.email,
-      riderName: rider.name,
-      parcelId: selectedParcel._id
-    */
+    
+    app.patch('/parcels/:id/status', async(req,res)=>{
+      const id= req.params.id;
+      const query= {_id: new ObjectId(id)};
+      const {deliveryStatus}= req.body;
+      const updatedDoc={
+$set:{deliveryStatus:deliveryStatus}
+      };
+      const result= await parcelCollection.updateOne(query,updatedDoc);
+      res.send(result)
+
+    })
 
 
     app.delete("/parcels/:id", async (req, res) => {
