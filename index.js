@@ -74,6 +74,7 @@ async function run() {
     const riderCollection = db.collection("riders");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+    const trackingCollection = db.collection("trackings");
 
     //! middleware for protect user to allow admin activity
     //* must be use after verifyFBToken middleware for getting email
@@ -88,6 +89,17 @@ async function run() {
       }
       next();
     };
+
+    const logTracking= async (trackingId, status)=>{
+      const log={
+        trackingId,
+        status,
+        details:status.split('_').join(' '),
+        createdAt: new Date()
+      };
+      const result= await trackingCollection.insertOne(log);
+      return result;
+    }
 
     // Users related API
     app.post("/users", async (req, res) => {
@@ -198,7 +210,10 @@ async function run() {
 
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
+      const trackingId= generateTrackingId()
       parcel.createdAt = new Date();
+      parcel.trackingId= trackingId;
+      logTracking(trackingId, 'parcel_created')
       const result = await parcelCollection.insertOne(parcel);
       res.send(result);
     });
@@ -206,7 +221,7 @@ async function run() {
     app.patch("/parcels/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
-      const { riderId, riderEmail, riderName, parcelId } = req.body;
+      const { riderId, riderEmail, riderName, parcelId, trackingId} = req.body;
 
       const updatedDoc = {
         $set: {
@@ -230,13 +245,14 @@ async function run() {
         riderQuery,
         riderUpdareDoc,
       );
+      logTracking(trackingId,'rider_assigned')
       res.send(riderResult);
     });
 
     app.patch("/parcels/:id/status", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
-      const { deliveryStatus, riderId } = req.body;
+      const { deliveryStatus, riderId, trackingId } = req.body;
       const updatedDoc = {
         $set: { deliveryStatus: deliveryStatus },
       };
@@ -250,6 +266,8 @@ async function run() {
 
       }
       const result = await parcelCollection.updateOne(query, updatedDoc);
+      // log tracking
+      logTracking(trackingId, deliveryStatus)
       res.send(result);
     });
 
@@ -285,6 +303,7 @@ async function run() {
         metadata: {
           parcelId: paymentInfo.parcelId,
           parcelName: paymentInfo.parcelName,
+          trackingId: paymentInfo.trackingId
         },
         customer_email: paymentInfo.senderEmail,
 
@@ -337,8 +356,8 @@ async function run() {
           trackingId: paymentExist.trackingId,
         });
       }
-
-      const trackingId = generateTrackingId();
+// use the previous tracking id created during the parcel create which was set to the session metadata during session creation
+      const trackingId = session.metadata.trackingId;
 
       // console.log("session retrive :", session);
       if (session.payment_status === "paid") {
@@ -366,6 +385,9 @@ async function run() {
         };
         if (session.payment_status === "paid") {
           const resultPayment = await paymentCollection.insertOne(payment);
+
+          logTracking(trackingId,'parcel_paid')
+
           return res.send({
             success: true,
             modifyParcel: result,
@@ -458,45 +480,45 @@ async function run() {
 
     //! AI Version
     /* 
-   app.patch('/riders/:identification', async (req, res) => {
+        app.patch('/riders/:identification', async (req, res) => {
 
-  try {
-    const id = req.params.identification;
-    const status = req.body.status;
-    const query = { _id: new ObjectId(id) };
+        try {
+          const id = req.params.identification;
+          const status = req.body.status;
+          const query = { _id: new ObjectId(id) };
 
-    const updatedDoc = {
-      $set: { status: status }
-    };
+          const updatedDoc = {
+            $set: { status: status }
+          };
 
-    const result = await riderCollection.updateOne(query, updatedDoc);
+          const result = await riderCollection.updateOne(query, updatedDoc);
 
-    // First ensure rider update success
-    if (result.modifiedCount > 0 && status === 'approved') {
+          // First ensure rider update success
+          if (result.modifiedCount > 0 && status === 'approved') {
 
-      const rider = await riderCollection.findOne(query);
+            const rider = await riderCollection.findOne(query);
 
-      const userQuery = { email: rider.email };
+            const userQuery = { email: rider.email };
 
-      const updateUser = {
-        $set: { role: 'rider' }
-      };
+            const updateUser = {
+              $set: { role: 'rider' }
+            };
 
-      await userCollection.updateOne(userQuery, updateUser);
-    }
+            await userCollection.updateOne(userQuery, updateUser);
+          }
 
-    res.send(result);
+          res.send(result);
 
-  } catch (error) {
+        } catch (error) {
 
-    res.status(500).send({
-      message: 'Something went wrong',
-      error: error.message
-    });
+          res.status(500).send({
+            message: 'Something went wrong',
+            error: error.message
+          });
 
-  }
+        }
 
-});
+      });
    */
 
     /* app.patch('/riders/:id', async(req,res)=>{
@@ -511,6 +533,15 @@ async function run() {
       const result= await riderCollection.updateOne(query,updatedDoc);
       res.send(result);
     }) */
+
+// Tracking related
+app.get('/trackings/:trackingId/logs', async(req,res)=>{
+  const trackingId= req.params.trackingId;
+  const query= {trackingId};
+  const result= await trackingCollection.find().toArray();
+  res.send(result)
+
+})
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
