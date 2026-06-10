@@ -220,10 +220,6 @@ async function run() {
       res.send(result);
     });
 
-
-
-    
-
     app.get("/parcels/delivery-status/stats", async (req, res) => {
       const pipeline = [
         {
@@ -243,12 +239,6 @@ async function run() {
       const result = await parcelCollection.aggregate(pipeline).toArray();
       res.send(result);
     });
-
-
-
-
-
-
 
     app.post("/parcels", async (req, res) => {
       const parcel = req.body;
@@ -315,11 +305,48 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/parcels/:id", async (req, res) => {
+    /* 
+    
+      app.delete("/parcels/:id", async (req, res) => {
+        const id = req.params.id;
+
+        const query = { _id: new ObjectId(id) };
+        const result = await parcelCollection.deleteOne(query);
+        res.send(result);
+      })
+        //! this is original ai correction api is belloe
+    */ 
+   
+    app.delete("/parcels/:id", verifyFBToken, async (req, res) => {
       const id = req.params.id;
 
-      const query = { _id: new ObjectId(id) };
-      const result = await parcelCollection.deleteOne(query);
+      const parcel = await parcelCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!parcel) {
+        return res.status(404).send({
+          message: "Parcel not found",
+        });
+      }
+
+      const user = await userCollection.findOne({
+        email: req.decoded_email,
+      });
+
+      const isOwner = parcel.senderEmail === req.decoded_email;
+      const isAdmin = user?.role === "admin";
+
+      if (!isOwner && !isAdmin) {
+        return res.status(403).send({
+          message: "Forbidden access",
+        });
+      }
+
+      const result = await parcelCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
       res.send(result);
     });
 
@@ -481,6 +508,56 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/riders/delivery-per-day", async (req, res) => {
+      const email = req.query.email;
+
+      const pipeline = [
+        {
+          $match: {
+            riderEmail: email,
+            deliveryStatus: "parcel_delivered",
+          },
+        },
+        {
+          $lookup: {
+            from: "trackings",
+            localField: "trackingId",
+            foreignField: "trackingId",
+            as: "parcel_trackings",
+          },
+        },
+        {
+          $unwind: "$parcel_trackings",
+        },
+        {
+          $match: {
+            "parcel_trackings.status": "parcel_delivered",
+          },
+        },
+        {
+          // convert timestamp to YYYY-MM-DD string
+          $addFields: {
+            deliveryDay: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$parcel_trackings.createdAt",
+              },
+            },
+          },
+        },
+        {
+          // group by date
+          $group: {
+            _id: "$deliveryDay",
+            deliveredCount: { $sum: 1 },
+          },
+        },
+      ];
+
+      const result = await parcelCollection.aggregate(pipeline).toArray();
+      res.send(result);
+    });
+
     app.post("/riders", async (req, res) => {
       const rider = req.body;
       rider.status = "pending";
@@ -520,8 +597,35 @@ async function run() {
       },
     );
 
-    //! AI Version
-    /* 
+    // Tracking related
+    app.get("/trackings/:trackingId/logs", async (req, res) => {
+      const trackingId = req.params.trackingId;
+      const query = { trackingId };
+      const result = await trackingCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // Send a ping to confirm a successful connection
+    await client.db("admin").command({ ping: 1 });
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB✔",
+    );
+  } finally {
+    // Ensures that the client will close when you finish/error
+    //! await client.close();
+  }
+}
+run().catch(console.dir);
+app.get("/", (req, res) => {
+  res.send("Hello from percel delivery server!");
+});
+
+app.listen(port, () => {
+  console.log(`Example app listening on port ${port}`);
+});
+
+//! AI Version
+/* 
         app.patch('/riders/:identification', async (req, res) => {
 
         try {
@@ -563,7 +667,7 @@ async function run() {
       });
    */
 
-    /* app.patch('/riders/:id', async(req,res)=>{
+/* app.patch('/riders/:id', async(req,res)=>{
       const id= req.params.id;
       const status= req.body.status;
       const query= {_id: new ObjectId(id)};
@@ -575,30 +679,3 @@ async function run() {
       const result= await riderCollection.updateOne(query,updatedDoc);
       res.send(result);
     }) */
-
-    // Tracking related
-    app.get("/trackings/:trackingId/logs", async (req, res) => {
-      const trackingId = req.params.trackingId;
-      const query = { trackingId };
-      const result = await trackingCollection.find(query).toArray();
-      res.send(result);
-    });
-
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB✔",
-    );
-  } finally {
-    // Ensures that the client will close when you finish/error
-    //! await client.close();
-  }
-}
-run().catch(console.dir);
-app.get("/", (req, res) => {
-  res.send("Hello from percel delivery server!");
-});
-
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
-});
